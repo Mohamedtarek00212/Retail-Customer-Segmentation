@@ -142,13 +142,13 @@ def compute_rfm(df: pd.DataFrame) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def remove_outliers(df: pd.DataFrame) -> pd.DataFrame:
-    """Remove IQR outliers on MonetaryValue and Frequency (same as notebook)."""
+    """Remove IQR outliers on Recency, MonetaryValue and Frequency."""
     def iqr_mask(series):
         q1, q3 = series.quantile(0.25), series.quantile(0.75)
         iqr = q3 - q1
         return (series >= q1 - 1.5 * iqr) & (series <= q3 + 1.5 * iqr)
 
-    mask = iqr_mask(df["MonetaryValue"]) & iqr_mask(df["Frequency"])
+    mask = iqr_mask(df["Recency"]) & iqr_mask(df["MonetaryValue"]) & iqr_mask(df["Frequency"])
     return df[mask].copy()
 
 
@@ -297,6 +297,10 @@ with st.spinner("Cleaning data …"):
 with st.spinner("Computing RFM …"):
     rfm_df = compute_rfm(clean_df)
     rfm_no_outliers = remove_outliers(rfm_df)
+
+outliers_removed = len(rfm_df) - len(rfm_no_outliers)
+with st.sidebar:
+    st.success(f"🧹 **Data Quality Check**: {outliers_removed} outliers removed.")
 
 with st.spinner(f"Running K-Means (k={n_clusters}) …"):
     segmented = segment_customers(rfm_no_outliers, n_clusters=n_clusters)
@@ -460,9 +464,10 @@ fig_3d = px.scatter_3d(
         "Frequency":      y_label,
         "MonetaryValue":  z_label,
     },
-    opacity=0.75,
+    opacity=0.6,
+    size_max=10,
 )
-fig_3d.update_traces(marker=dict(size=4))
+fig_3d.update_traces(marker=dict(size=10))
 fig_3d.update_layout(
     scene=dict(
         xaxis_title=x_label,
