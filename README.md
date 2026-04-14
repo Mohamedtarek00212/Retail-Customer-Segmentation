@@ -56,9 +56,9 @@ The dashboard features:
 ## 🏗️ Project Structure
 
 ```
-📦 online-retail-segmentation/
-├── 📓 online_retail.ipynb      # Full EDA + modelling notebook
-├── 🐍 app.py                   # Streamlit web application
+📦 Retail-Customer-Segmentation/
+├── 🐍 app.py                   # Full EDA + modelling notebook
+├── 📓 online_retail.ipynb      # Streamlit web application
 ├── 📊 online_retail_II.xlsx    # Source dataset (UCI Online Retail II)
 └── 📄 requirements.txt         # Python dependencies
 ```
@@ -100,11 +100,11 @@ Clusters are ranked by a composite RFM score and mapped to human-readable busine
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-username/online-retail-segmentation.git
-cd online-retail-segmentation
+git clone https://github.com/Mohamedtarek00212/Retail-Customer-Segmentation.git
+cd Retail-Customer-Segmentation
 
 # 2. Install dependencies
-pip install streamlit pandas numpy scikit-learn plotly openpyxl
+pip install -r requirements.txt
 
 # 3. Launch the dashboard
 streamlit run app.py
