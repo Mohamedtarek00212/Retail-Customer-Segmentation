@@ -220,13 +220,6 @@ with st.sidebar:
     sidebar_caption.caption(f"Online Retail · RFM + K-Means (k = {n_clusters})")
 
     st.divider()
-    st.markdown("**📐 Axis Scale Options**")
-    log_monetary  = st.checkbox("Log Scale — Monetary Value", value=False,
-                                help="Apply log₁₀ scale to Monetary axis (helps with outliers)")
-    log_frequency = st.checkbox("Log Scale — Frequency",      value=False,
-                                help="Apply log₁₀ scale to Frequency axis (helps with outliers)")
-
-    st.divider()
     st.caption("Preprocessing mirrors the Online Retail II notebook: "
                "6-digit invoice filter · StockCode regex · IQR outlier removal · StandardScaler")
 
@@ -422,23 +415,22 @@ st.divider()
 st.subheader("🌐 3D RFM Scatter — Recency × Frequency × Monetary")
 st.caption("Rotate · Zoom · Hover for details · Toggle segments in the legend")
 
-# Prepare plot data (apply log scale if requested)
-plot_df = segmented.copy()
+with st.sidebar:
+    st.divider()
+    st.markdown("**🔍 3D Plot Filter**")
+    available_segments = sorted(segmented["Segment"].unique())
+    selected_segments = st.multiselect(
+        "Select Segments for 3D Plot", 
+        options=available_segments, 
+        default=available_segments,
+        help="Filter the 3D scatter plot to show only specific customer segments."
+    )
+
+# Prepare plot data
+plot_df = segmented[segmented["Segment"].isin(selected_segments)].copy()
 x_label = "Recency (days)"
-y_label  = "Frequency (orders)"
-z_label  = "Monetary Value (£)"
-
-if log_frequency:
-    plot_df["Frequency_plot"] = np.log10(plot_df["Frequency"].clip(lower=1))
-    y_label = "log₁₀(Frequency)"
-else:
-    plot_df["Frequency_plot"] = plot_df["Frequency"]
-
-if log_monetary:
-    plot_df["Monetary_plot"] = np.log10(plot_df["MonetaryValue"].clip(lower=1))
-    z_label = "log₁₀(Monetary Value)"
-else:
-    plot_df["Monetary_plot"] = plot_df["MonetaryValue"]
+y_label = "Frequency (orders)"
+z_label = "Monetary Value (£)"
 
 # Build colour map for all possible segments (named + generic)
 all_possible_segments = SEGMENT_ORDER + [f"🔢 Cluster {i+1}" for i in range(len(SEGMENT_ORDER), 10)]
@@ -450,22 +442,23 @@ for i, seg in enumerate(all_possible_segments[len(SEGMENT_ORDER):]):
 fig_3d = px.scatter_3d(
     plot_df,
     x="Recency",
-    y="Frequency_plot",
-    z="Monetary_plot",
+    y="Frequency",
+    z="MonetaryValue",
     color="Segment",
     color_discrete_map=color_map,
+    hover_name="Customer ID",
     hover_data={
-        "Customer ID": True,
+        "Customer ID": False,
+        "Segment": True,
         "Recency": True,
         "Frequency": True,
-        "MonetaryValue": ":.0f",
-        "Frequency_plot": False,
-        "Monetary_plot": False,
+        "MonetaryValue": ":.2f",
+        "LastInvoiceDate": True,
     },
     labels={
         "Recency":        x_label,
-        "Frequency_plot": y_label,
-        "Monetary_plot":  z_label,
+        "Frequency":      y_label,
+        "MonetaryValue":  z_label,
     },
     opacity=0.75,
 )
