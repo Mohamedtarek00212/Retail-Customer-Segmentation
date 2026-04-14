@@ -153,24 +153,28 @@ def remove_outliers(df: pd.DataFrame) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def segment_customers(rfm: pd.DataFrame) -> pd.DataFrame:
-    """Scale RFM features and fit K-Means (k=4). Returns rfm with 'Segment' column."""
+def segment_customers(rfm: pd.DataFrame, n_clusters: int = 4) -> pd.DataFrame:
+    """Scale RFM features and fit K-Means. Returns rfm with 'Segment' and 'Cluster' columns."""
     features = ["MonetaryValue", "Frequency", "Recency"]
     scaler = StandardScaler()
     scaled = scaler.fit_transform(rfm[features])
 
-    kmeans = KMeans(n_clusters=4, random_state=42, max_iter=1000)
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42, max_iter=1000)
     rfm = rfm.copy()
     rfm["Cluster"] = kmeans.fit_predict(scaled)
 
     # ── Assign business labels based on composite RFM score
+    # Use as many labels as clusters; if more clusters than named segments, use generic labels
     stats = rfm.groupby("Cluster")[features].mean()
     stats["RecencyScore"] = 1 - (stats["Recency"] / stats["Recency"].max())
     stats["FreqScore"]    = stats["Frequency"]     / stats["Frequency"].max()
     stats["MoneyScore"]   = stats["MonetaryValue"] / stats["MonetaryValue"].max()
     stats["Score"]        = (stats["RecencyScore"] + stats["FreqScore"] + stats["MoneyScore"]) / 3
     stats = stats.sort_values("Score", ascending=False)
-    stats["Segment"] = SEGMENT_ORDER[: len(stats)]
+
+    # Build label list: use named segments first, then generic numbered labels
+    all_labels = SEGMENT_ORDER + [f"🔢 Cluster {i+1}" for i in range(len(SEGMENT_ORDER), n_clusters)]
+    stats["Segment"] = all_labels[:len(stats)]
 
     cluster_map = dict(zip(stats.index, stats["Segment"]))
     rfm["Segment"] = rfm["Cluster"].map(cluster_map)
@@ -186,7 +190,7 @@ with st.sidebar:
         width=64,
     )
     st.title("Customer Segmentation")
-    st.caption("Online Retail · RFM + K-Means (k = 4)")
+    sidebar_caption = st.empty()   # filled after slider is defined below
     st.divider()
 
     uploaded = st.file_uploader(
@@ -202,6 +206,25 @@ with st.sidebar:
     st.markdown("**Expected columns**")
     for col in ["Invoice", "StockCode", "Description", "Quantity", "InvoiceDate", "Price", "Customer ID"]:
         st.markdown(f"- `{col}`")
+
+    st.divider()
+    st.markdown("**🔢 Clustering Settings**")
+    n_clusters = st.slider(
+        "Number of Clusters (K)",
+        min_value=2,
+        max_value=10,
+        value=4,
+        step=1,
+        help="Adjust the number of K-Means clusters. The model will re-run automatically.",
+    )
+    sidebar_caption.caption(f"Online Retail · RFM + K-Means (k = {n_clusters})")
+
+    st.divider()
+    st.markdown("**📐 Axis Scale Options**")
+    log_monetary  = st.checkbox("Log Scale — Monetary Value", value=False,
+                                help="Apply log₁₀ scale to Monetary axis (helps with outliers)")
+    log_frequency = st.checkbox("Log Scale — Frequency",      value=False,
+                                help="Apply log₁₀ scale to Frequency axis (helps with outliers)")
 
     st.divider()
     st.caption("Preprocessing mirrors the Online Retail II notebook: "
@@ -282,18 +305,23 @@ with st.spinner("Computing RFM …"):
     rfm_df = compute_rfm(clean_df)
     rfm_no_outliers = remove_outliers(rfm_df)
 
-with st.spinner("Running K-Means …"):
-    segmented = segment_customers(rfm_no_outliers)
+with st.spinner(f"Running K-Means (k={n_clusters}) …"):
+    segmented = segment_customers(rfm_no_outliers, n_clusters=n_clusters)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # KPI row
 # ─────────────────────────────────────────────────────────────────────────────
 st.divider()
-k1, k2, k3, k4 = st.columns(4)
-k1.metric("Raw Transactions", f"{len(raw_df):,}")
-k2.metric("After Cleaning",   f"{len(clean_df):,}")
-k3.metric("Unique Customers", f"{len(rfm_df):,}")
+k1, k2, k3, k4, k5, k6 = st.columns(6)
+k1.metric("Raw Transactions",        f"{len(raw_df):,}")
+k2.metric("After Cleaning",          f"{len(clean_df):,}")
+k3.metric("Unique Customers",        f"{len(rfm_df):,}")
 k4.metric("Segmented (no outliers)", f"{len(segmented):,}")
+k5.metric("Total Customers",         f"{len(segmented):,}",
+          help="Customers retained after IQR outlier removal")
+avg_rev = segmented["MonetaryValue"].mean()
+k6.metric("Avg Revenue / Customer",  f"£{avg_rev:,.0f}",
+          help="Mean monetary value per segmented customer")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Segment distribution
@@ -388,29 +416,74 @@ styled = (
 st.dataframe(styled, use_container_width=True, hide_index=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# RFM scatter (Recency vs. Monetary, size = Frequency)
+# 3D RFM Scatter Plot
 # ─────────────────────────────────────────────────────────────────────────────
 st.divider()
-st.subheader("🔵 RFM Scatter — Recency vs. Monetary Value")
-st.caption("Bubble size = Frequency  ·  Click legend items to toggle segments")
+st.subheader("🌐 3D RFM Scatter — Recency × Frequency × Monetary")
+st.caption("Rotate · Zoom · Hover for details · Toggle segments in the legend")
 
-fig_scatter = px.scatter(
-    segmented,
+# Prepare plot data (apply log scale if requested)
+plot_df = segmented.copy()
+x_label = "Recency (days)"
+y_label  = "Frequency (orders)"
+z_label  = "Monetary Value (£)"
+
+if log_frequency:
+    plot_df["Frequency_plot"] = np.log10(plot_df["Frequency"].clip(lower=1))
+    y_label = "log₁₀(Frequency)"
+else:
+    plot_df["Frequency_plot"] = plot_df["Frequency"]
+
+if log_monetary:
+    plot_df["Monetary_plot"] = np.log10(plot_df["MonetaryValue"].clip(lower=1))
+    z_label = "log₁₀(Monetary Value)"
+else:
+    plot_df["Monetary_plot"] = plot_df["MonetaryValue"]
+
+# Build colour map for all possible segments (named + generic)
+all_possible_segments = SEGMENT_ORDER + [f"🔢 Cluster {i+1}" for i in range(len(SEGMENT_ORDER), 10)]
+generic_palette = px.colors.qualitative.Safe
+color_map = {s: SEGMENT_INFO[s]["color"] for s in SEGMENT_ORDER}
+for i, seg in enumerate(all_possible_segments[len(SEGMENT_ORDER):]):
+    color_map[seg] = generic_palette[i % len(generic_palette)]
+
+fig_3d = px.scatter_3d(
+    plot_df,
     x="Recency",
-    y="MonetaryValue",
-    size="Frequency",
+    y="Frequency_plot",
+    z="Monetary_plot",
     color="Segment",
-    color_discrete_map={s: SEGMENT_INFO[s]["color"] for s in SEGMENT_ORDER},
-    hover_data={"Customer ID": True, "Recency": True, "Frequency": True, "MonetaryValue": ":.0f"},
-    opacity=0.65,
-    size_max=24,
-    labels={"MonetaryValue": "Monetary Value (£)", "Recency": "Recency (days)"},
+    color_discrete_map=color_map,
+    hover_data={
+        "Customer ID": True,
+        "Recency": True,
+        "Frequency": True,
+        "MonetaryValue": ":.0f",
+        "Frequency_plot": False,
+        "Monetary_plot": False,
+    },
+    labels={
+        "Recency":        x_label,
+        "Frequency_plot": y_label,
+        "Monetary_plot":  z_label,
+    },
+    opacity=0.75,
 )
-fig_scatter.update_layout(
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-    margin=dict(t=10, b=10),
+fig_3d.update_traces(marker=dict(size=4))
+fig_3d.update_layout(
+    scene=dict(
+        xaxis_title=x_label,
+        yaxis_title=y_label,
+        zaxis_title=z_label,
+        xaxis=dict(backgroundcolor="rgba(240,240,255,0.5)"),
+        yaxis=dict(backgroundcolor="rgba(240,255,240,0.5)"),
+        zaxis=dict(backgroundcolor="rgba(255,240,240,0.5)"),
+    ),
+    legend=dict(orientation="v", x=1.02, y=0.5),
+    margin=dict(t=10, b=10, l=10, r=10),
+    height=600,
 )
-st.plotly_chart(fig_scatter, use_container_width=True)
+st.plotly_chart(fig_3d, use_container_width=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Insights + Recommendations (accordion)
