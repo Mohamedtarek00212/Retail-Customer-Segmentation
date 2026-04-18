@@ -198,30 +198,27 @@ with st.sidebar:
         type=["csv", "xlsx", "xls"],
         help=(
             "Expected columns: Invoice, StockCode, Description, Quantity, "
-            "InvoiceDate, Price, Customer ID"
+            "InvoiceDate, Price, Customer ID, Country"
         ),
     )
 
     st.divider()
     st.markdown("**Expected columns**")
-    for col in ["Invoice", "StockCode", "Description", "Quantity", "InvoiceDate", "Price", "Customer ID"]:
+    for col in ["Invoice", "StockCode", "Description", "Quantity", "InvoiceDate", "Price", "Customer ID", "Country"]:
         st.markdown(f"- `{col}`")
 
     st.divider()
-    st.markdown("**🔢 Clustering Settings**")
-    n_clusters = st.slider(
-        "Number of Clusters (K)",
-        min_value=2,
-        max_value=10,
-        value=4,
-        step=1,
-        help="Adjust the number of K-Means clusters. The model will re-run automatically.",
-    )
-    sidebar_caption.caption(f"Online Retail · RFM + K-Means (k = {n_clusters})")
+    st.markdown("**🌍 Country Filter**")
+    st.caption("Upload a file to enable country filtering.")
+
+    sidebar_caption.caption("Online Retail · RFM + K-Means (k = 4)")
 
     st.divider()
     st.caption("Preprocessing mirrors the Online Retail II notebook: "
                "6-digit invoice filter · StockCode regex · IQR outlier removal · StandardScaler")
+
+# Hardcoded clusters
+n_clusters = 4
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Main area
@@ -284,7 +281,7 @@ else:
             st.stop()
 
 # Validate required columns
-required = {"Invoice", "StockCode", "Quantity", "InvoiceDate", "Price", "Customer ID"}
+required = {"Invoice", "StockCode", "Quantity", "InvoiceDate", "Price", "Customer ID", "Country"}
 missing = required - set(raw_df.columns)
 if missing:
     st.error(f"❌ **Invalid file structure.** Missing required columns:\n`{', '.join(missing)}`")
@@ -293,6 +290,27 @@ if missing:
 
 with st.spinner("Cleaning data …"):
     clean_df = preprocess(raw_df)
+
+# ── Country filter (sidebar, populated from live data) ────────────────────────
+with st.sidebar:
+    st.divider()
+    st.markdown("**🌍 Country Filter**")
+    all_countries = sorted(clean_df["Country"].dropna().unique().tolist())
+    default_countries = (
+        ["United Kingdom"] if "United Kingdom" in all_countries else all_countries
+    )
+    selected_countries = st.multiselect(
+        "Select Country/Countries",
+        options=all_countries,
+        default=default_countries,
+        help="Filter transactions by country before running RFM segmentation.",
+    )
+
+if not selected_countries:
+    st.warning("⚠️ No countries selected. Please choose at least one country in the sidebar.")
+    st.stop()
+
+clean_df = clean_df[clean_df["Country"].isin(selected_countries)]
 
 with st.spinner("Computing RFM …"):
     rfm_df = compute_rfm(clean_df)
