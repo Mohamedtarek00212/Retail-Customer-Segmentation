@@ -292,9 +292,7 @@ with st.sidebar:
     st.divider()
     st.markdown("**🌍 Country Filter**")
     all_countries = sorted(clean_df["Country"].dropna().unique().tolist())
-    default_countries = (
-        ["United Kingdom"] if "United Kingdom" in all_countries else all_countries
-    )
+    default_countries = all_countries
     selected_countries = st.multiselect(
         "Select Country/Countries",
         options=all_countries,
