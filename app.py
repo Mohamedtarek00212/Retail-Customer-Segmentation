@@ -361,7 +361,7 @@ with col_pie:
         hole=0.45,
     )
     fig_pie.update_traces(textposition="outside", textinfo="percent+label")
-    fig_pie.update_layout(showlegend=False, margin=dict(t=20, b=20, l=20, r=20))
+    fig_pie.update_layout(showlegend=False, margin=dict(t=20, b=50, l=20, r=40))
     st.plotly_chart(fig_pie, use_container_width=True)
 
 with col_bar:
